@@ -17,4 +17,5 @@ urlpatterns = [
     path('electronics/',ElectronicsAPIView.as_view()),
     path('model/register/',ModelregisterAPIView.as_view()),
     path('model/access_check/',SubuserModelAccessListAPIView.as_view()),
+    path('grant_permission_to _subuser/',GrantPermissiontoSubuserAPIView.as_view()),
 ]   

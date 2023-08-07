@@ -416,7 +416,45 @@ class SubuserModelAccessListAPIView(APIView):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except UserModelPermission.DoesNotExist:
             return Response({"msg": "User not found in the permissions list."}, status=status.HTTP_404_NOT_FOUND)
+        
 
+class GrantPermissiontoSubuserAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        try:
+            user = User.objects.get(id=request.user.id, role__in=["user", "admin"])
+        except User.DoesNotExist:
+            return Response({"msg": "You don't have permission to grant access to subusers."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # Validate the input data from the request
+        serializer = UsermodelpermissionSerializer(data=request.data)
+        if serializer.is_valid():
+            # Save the permission data to the UserModelPermission model
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+    def put(self,request):
+        id = request.data.get('id')
+        try:
+            user = User.objects.get(id=request.user.id, role__in=["user", "admin"])
+        except User.DoesNotExist:
+            return Response({"msg": "You don't have permission to grant access to subusers."},
+                            status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+            usr = UserModelPermission.objects.get(pk=id)
+            serializer = UsermodelpermissionSerializer(usr,data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({'msg':'permission updated successfully'},status=status.HTTP_205_RESET_CONTENT)
+            return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({"msg": "user not found"}, status=status.HTTP_404_NOT_FOUND)
+        
 
 
      

@@ -61,6 +61,7 @@ class ModellistSerializer(serializers.ModelSerializer):
         model= ModelList
         fields = '__all__'
 class UsermodelpermissionSerializer(serializers.ModelSerializer):
+    status = serializers.BooleanField( required=True)
     class Meta:
         model =UserModelPermission
         fields = '__all__'
