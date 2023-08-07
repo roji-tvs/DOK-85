@@ -9,29 +9,34 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth import  login  
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User
-from .serializer import CustomUserSerializer  
+from .models import *
+from .serializer import *
+from .permissions import HasBookShopPermission,HasFlowerShopPermission,HasDishPermission,HasElectronicsShopPermission
+
 
 # User=get_user_model()
 class UserRegistrationAPIView(APIView):
     def post(self, request):
         password = request.data.get('password')
         password2 = request.data.get('password2')
-        
-        if not password or not password2:
-           return Response({'msg':'please provide both  password'})
+        role = request.data.get('role')  # Assuming 'role' is a field in the request data representing the user's role.
 
+        if not password or not password2:
+            return Response({'msg': 'Please provide both passwords.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if password != password2:
             return Response({'msg': 'Passwords do not match.'}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            serializer = CustomUserSerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                
-                return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
-        
+
+        if role in ['Superuser', 'subuser']:
+            return Response({'msg': 'Only admin and regular users can register.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = CustomUserSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     
 
     def get(self, request):
@@ -74,11 +79,11 @@ class UserRegistrationAPIView(APIView):
         usr.delete()
         return Response({'msg': 'user deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
     
-class UserDetailAPIView(APIView):
-   def get(self, request):
-        users = User.objects.all()
-        serializer = CustomUserSerializer(users, many=True)
-        return Response(serializer.data)
+# class UserDetailAPIView(APIView):
+#    def get(self, request):
+#         users = User.objects.all()
+#         serializer = CustomUserSerializer(users, many=True)
+#         return Response(serializer.data)
    
         
 
@@ -89,7 +94,7 @@ class UserLoginAPIView(APIView):
         password = request.data.get('password')
         try:
            
-           user=User.objects.get(mobile_number=mobile_number)  
+           user=User.objects.get(mobile_number=mobile_number,role__in=["user", "admin","subuser"])  
         except:
             return Response({"message": "User with the provided phone number not found."}, status=status.HTTP_401_UNAUTHORIZED)
         
@@ -109,76 +114,309 @@ class UserProfileAccessAPIView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
-    def get(self, request,id):
-        
-        
+    def get(self, request):
         try:
-            user = User.objects.get(pk=id)
-            role = user.role
-            
-            if role == "Superuser":  # Superuser (1)
-                # Superuser can access all user profiles
-                users = User.objects.all()
-                serializer = CustomUserSerializer(users, many=True)
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            elif role == "Admin":  # Admin (2)
-                # Admin can access their own profile and user profiles
-                users = User.objects.filter(role__in=['Admin','user'])  # Admin (2) and User (3)
-                serializer = CustomUserSerializer(users, many=True)
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            elif role == "user": # Regular User (3)
-                # Regular user can only access their own profile
-                user = request.user
-                serializer = CustomUserSerializer(user)
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            else:
-                # Invalid or unsupported role
-                return Response({'msg': 'Invalid role. Supported roles are 1, 2, and 3.'}, status=status.HTTP_400_BAD_REQUEST)
-                
+            user = User.objects.get(id=request.user.id)
         except User.DoesNotExist:
             return Response({'msg': 'User does not exist.'}, status=status.HTTP_404_NOT_FOUND)
         
+        role = user.role    
+        if role == "Superuser":  # Superuser (1)
+            # Superuser can access all user profiles
+            users1 = User.objects.all()
+            # usr = SubUser.objects.all()
+            serializer = CustomUserSerializer(users1, many=True)
+            # serializer2 = SubUserSerializer(usr, many=True)
+            data1 = {
+                'all_profiles' : serializer.data,
+                # 'all_subuser_profile' : serializer2.data,
+            }
+            return Response(data1, status=status.HTTP_200_OK)
+        elif role == "Admin":
+            # admin can only access his profile and all users profile
+            admin = request.user
+            users2 = User.objects.filter(role="user")  # User (3) profiles only
+            serializer_admin = CustomUserSerializer(admin)
+            serializer_users = CustomUserSerializer(users2, many=True)
+            data2 = {
+                'admin_profile': serializer_admin.data,
+                'user_profiles': serializer_users.data,
+            }
+            return Response(data2, status=status.HTTP_200_OK)
+        elif role == "user": # Regular User (3)
+            # Regular user can only access their own profile and created subuser by them
+            serializer = CustomUserSerializer(user)
+            sub_users = user.created_sub_users.all()
+            serializer2 =CustomUserSerializer(sub_users,many=True)
+            # serializer2 = SubUserSerializer(sub_users, many=True)
+            # if not serializer2.data:  # If the serialized data is empty
+            #     return Response({'message': 'No sub_user created by this user'}, status=status.HTTP_200_OK)
+            data3 = {
+                'user_profile': serializer.data,
+                'created_sub_users': serializer2.data
+            }
+            return Response(data3, status=status.HTTP_200_OK)
+        else:
+            # Invalid or unsupported role
+            return Response({'msg': 'Invalid role.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+# Login Api for subuser login         
+# class SubuserLoginAPIView(APIView):
+#     def post(self,request):
+#         username = request.data.get('username')
+#         password = request.data.get('password')
+#         # try:
+#         #     user = SubUser.objects.get(username=username)
+#         # except SubUser.DoesNotExist:
+#         #     return Response({'msg':'subuser with provided username does not exist'},status=status.HTTP_404_NOT_FOUND)
+#         if check_password(password, user.password):
+#             # refresh = RefreshToken.for_user(user)
+
+#             return Response({"message": "Login successful.", }, status=status.HTTP_200_OK)
+#         else:
+#             return Response({"message": "Invalid password credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+       
+               
 #api for creating sub-user     
 class SubUserCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
     def post(self, request):
-        user_id = request.data.get('id')
+        user_id = request.user.id
 
-        if not user_id:
-            return Response({'msg': 'Provide a valid id'}, status=status.HTTP_400_BAD_REQUEST)
-    
-        try:
-            user = User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            return Response({'msg': 'User with the provided id does not exist'}, status=status.HTTP_404_NOT_FOUND)
-        
         data = request.data.copy()
-        # Set the 'created_by' field to the user'id
-        data['created_by'] = user.id
         
+        data['created_by'] = user_id
+        data['role']='subuser'
         serializer = CustomUserSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response({'msg':'Sub-user created successfully'}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+# api for bookshop
+book_model_id = 1
+class BookAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+   
+    def has_model_access(self, user_id, model_id):
+        try:
+            permission = UserModelPermission.objects.get(user_id=user_id, model_id=model_id, status=True)
+            return True
+        except UserModelPermission.DoesNotExist:
+            return False
 
+    def get(self, request):
+        user_id = request.user.id
+        if not self.has_model_access(user_id, book_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        books = Bookshop.objects.all()
+        serializer=BookSerializer(books,many=True)
+        return Response(serializer.data,status=status.HTTP_200_OK)
     
+    def post(self, request):
+        user_id = request.user.id
+        if not self.has_model_access(user_id, book_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        serializer = BookSerializer(data = request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def put(self, request):
+        user_id = request.user.id
+        if not self.has_model_access(user_id, book_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        id = request.data.get('id')
+        try:
+            books = Bookshop.objects.get(pk=id)
+        except Bookshop.DoesNotExist:
+            return Response({"msg": "Book not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = BookSerializer(books, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'msg': 'Book updated successfully'}, status=status.HTTP_205_RESET_CONTENT)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+#api for flowershop    
+flower_model_id=2    
+class FlowerAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+    # Check if the user has access to the specified model_id in UserModelPermission
+    def has_model_access(self, user_id, model_id):
+        try:
+            permission = UserModelPermission.objects.get(user_id=user_id, model_id=model_id, status=True)
+            return True
+        except UserModelPermission.DoesNotExist:
+            return False
 
-class UserSubUserListAPIView(APIView):
+
+    def get(self, request):
+        user_id = request.user.id
+        if not self.has_model_access(user_id, flower_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        flos = Flowershop.objects.all()
+        serializer=FlowerSerializer(flos,many=True)
+        return Response(serializer.data,status=status.HTTP_200_OK)
+    
+    def post(self, request):
+        user_id = request.user.id
+        if not self.has_model_access(user_id, flower_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        serializer = FlowerSerializer(data = request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def put(self, request):
+        id = request.data.get('id')
+        user_id = request.user.id
+        if not self.has_model_access(user_id, flower_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            flos= Flowershop.objects.get(pk=id)
+        except Flowershop.DoesNotExist:
+            return Response({"msg": "flower not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = FlowerSerializer(flos, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'msg': 'flower updated successfully'}, status=status.HTTP_205_RESET_CONTENT)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+# api for dishshop 
+dish_model_id = 3    
+class DishAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+           
+    # Check if the user has access to the specified model_id in UserModelPermission
+    def has_model_access(self, user_id, model_id):
+        try:
+            permission = UserModelPermission.objects.get(user_id=user_id, model_id=model_id, status=True)
+            return True
+        except UserModelPermission.DoesNotExist:
+            return False
+       
+    def get(self, request):
+        user_id = request.user.id
+        if not self.has_model_access(user_id, dish_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        dish = Dish.objects.all()
+        serializer=DishSerializer(dish, many=True)
+        return Response(serializer.data,status=status.HTTP_200_OK)
+    
+    def post(self, request):
+        user_id = request.user.id
+        if not self.has_model_access(user_id, dish_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        serializer = DishSerializer(data = request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def put(self, request):
+        id = request.data.get('id')
+        user_id = request.user.id
+        if not self.has_model_access(user_id, dish_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            dish= Dish.objects.get(pk=id)
+        except Dish.DoesNotExist:
+            return Response({"msg": "Dish not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = DishSerializer(dish, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'msg': 'Dish updated successfully'}, status=status.HTTP_205_RESET_CONTENT)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+# api for electronicshop
+electronic_model_id = 4
+class ElectronicsAPIView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
-    def get(self, request, id):
+    def has_model_access(self,user_id,model_id):
         try:
-            user = User.objects.get(id=id)
-        except User.DoesNotExist:
-            return Response({'msg': 'User with the provided id does not exist'}, status=status.HTTP_404_NOT_FOUND)
+            permission=UserModelPermission.objects.get(user_id=user_id,model_id=model_id,status=True)
+            return True
+        except UserModelPermission.DoesNotExist:
+            return False
+        
+    def get(self, request):
+        user_id=request.user.id
+        if not self.has_model_access(user_id,electronic_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        electro = Electronicsshop.objects.all()
+        serializer=ElectronicsSerializer(electro,many=True)
+        return Response(serializer.data,status=status.HTTP_200_OK)
+    
+    def post(self, request):
+        user_id=request.user.id
+        if not self.has_model_access(user_id,electronic_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        serializer= ElectronicsSerializer(data = request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def put(self, request):
+        id = request.data.get('id')
+        user_id=request.user.id
+        if not self.has_model_access(user_id,electronic_model_id):
+            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            electro= Electronicsshop.objects.get(pk=id)
+        except Electronicsshop.DoesNotExist:
+            return Response({"msg": "this Electronic gadget not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ElectronicsSerializer(electro, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'msg': 'updated successfully'}, status=status.HTTP_205_RESET_CONTENT)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    # def delete(self, request):
+    #     id = request.data.get('id')
+    #     try:
+    #         book = Electronicsshop.objects.get(pk=id)
+    #     except Electronicsshop.DoesNotExist:
+    #         return Response({"msg": "Gadget not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        sub_users = user.created_sub_users.all()
-        serializer = CustomUserSerializer(sub_users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+    #     book.delete()
+    #     return Response({'msg': 'Gadget deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+#register model in model_list
+class ModelregisterAPIView(APIView):
+
+    def post(self,request):
+        serializer=ModellistSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self,request):
+        mdel=ModelList.objects.all()
+        serializer=ModellistSerializer(mdel,many=True)
+        return Response(serializer.data,status=status.HTTP_200_OK)
+    
+
+class SubuserModelAccessListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+    def get(self, request):
+        try:
+            # Attempt to fetch all UserModelPermission entries for the current authenticated user
+            permissions = UserModelPermission.objects.filter(user_id=request.user.id)
+            serializer = UsermodelpermissionSerializer(permissions, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except UserModelPermission.DoesNotExist:
+            return Response({"msg": "User not found in the permissions list."}, status=status.HTTP_404_NOT_FOUND)
 
 
 
+     
