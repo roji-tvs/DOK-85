@@ -10,8 +10,12 @@ from django.contrib.auth import  login
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import *
+from .permissions import *
 from .serializer import *
-from .permissions import HasBookShopPermission,HasFlowerShopPermission,HasDishPermission,HasElectronicsShopPermission
+from django.contrib.auth.models import Permission
+from datetime import datetime
+
+
 
 
 # User=get_user_model()
@@ -19,7 +23,7 @@ class UserRegistrationAPIView(APIView):
     def post(self, request):
         password = request.data.get('password')
         password2 = request.data.get('password2')
-        role = request.data.get('role')  # Assuming 'role' is a field in the request data representing the user's role.
+        role = request.data.get('role')
 
         if not password or not password2:
             return Response({'msg': 'Please provide both passwords.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -27,16 +31,17 @@ class UserRegistrationAPIView(APIView):
         if password != password2:
             return Response({'msg': 'Passwords do not match.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if role in ['Superuser', 'subuser']:
+        if role not in [1,2]:
             return Response({'msg': 'Only admin and regular users can register.'}, status=status.HTTP_400_BAD_REQUEST)
-
+    
+        
         serializer = CustomUserSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
-
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+        
+       
     
 
     def get(self, request):
@@ -61,7 +66,7 @@ class UserRegistrationAPIView(APIView):
               serializer = CustomUserSerializer(usr,data=request.data)
               if serializer.is_valid():
                 serializer.save()
-                return Response({'msg':'user updated successfully'},status=status.HTTP_205_RESET_CONTENT)
+                return Response({'msg':'user updated successfully'},status=status.HTTP_200_OK)
               return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
            except User.DoesNotExist:
             return Response({"msg": "user not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -94,7 +99,7 @@ class UserLoginAPIView(APIView):
         password = request.data.get('password')
         try:
            
-           user=User.objects.get(mobile_number=mobile_number,role__in=["user", "admin","subuser"])  
+           user=User.objects.get(mobile_number=mobile_number)  
         except:
             return Response({"message": "User with the provided phone number not found."}, status=status.HTTP_401_UNAUTHORIZED)
         
@@ -183,42 +188,37 @@ class SubUserCreateAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     def post(self, request):
         user_id = request.user.id
+        
 
         data = request.data.copy()
         
         data['created_by'] = user_id
-        data['role']='subuser'
+        data['role']= 3
         serializer = CustomUserSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response({'msg':'Sub-user created successfully'}, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
 
 # api for bookshop
-book_model_id = 1
+
 class BookAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated,CanChangeBookshopPermission]
     authentication_classes = [JWTAuthentication]
    
-    def has_model_access(self, user_id, model_id):
-        try:
-            permission = UserModelPermission.objects.get(user_id=user_id, model_id=model_id, status=True)
-            return True
-        except UserModelPermission.DoesNotExist:
-            return False
-
+    
+        
     def get(self, request):
-        user_id = request.user.id
-        if not self.has_model_access(user_id, book_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
+        
         books = Bookshop.objects.all()
         serializer=BookSerializer(books,many=True)
         return Response(serializer.data,status=status.HTTP_200_OK)
     
     def post(self, request):
-        user_id = request.user.id
-        if not self.has_model_access(user_id, book_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
         serializer = BookSerializer(data = request.data)
         if serializer.is_valid():
             serializer.save()
@@ -226,9 +226,7 @@ class BookAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def put(self, request):
-        user_id = request.user.id
-        if not self.has_model_access(user_id, book_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
         id = request.data.get('id')
         try:
             books = Bookshop.objects.get(pk=id)
@@ -241,31 +239,21 @@ class BookAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 #api for flowershop    
-flower_model_id=2    
+
 class FlowerAPIView(APIView):
     permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication]
-    # Check if the user has access to the specified model_id in UserModelPermission
-    def has_model_access(self, user_id, model_id):
-        try:
-            permission = UserModelPermission.objects.get(user_id=user_id, model_id=model_id, status=True)
-            return True
-        except UserModelPermission.DoesNotExist:
-            return False
-
-
+    authentication_classes = [JWTAuthentication,CanChangeFlowershopPermission]
+    
+    
     def get(self, request):
-        user_id = request.user.id
-        if not self.has_model_access(user_id, flower_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
         flos = Flowershop.objects.all()
         serializer=FlowerSerializer(flos,many=True)
         return Response(serializer.data,status=status.HTTP_200_OK)
     
     def post(self, request):
         user_id = request.user.id
-        if not self.has_model_access(user_id, flower_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
         serializer = FlowerSerializer(data = request.data)
         if serializer.is_valid():
             serializer.save()
@@ -274,9 +262,7 @@ class FlowerAPIView(APIView):
     
     def put(self, request):
         id = request.data.get('id')
-        user_id = request.user.id
-        if not self.has_model_access(user_id, flower_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
         try:
             flos= Flowershop.objects.get(pk=id)
         except Flowershop.DoesNotExist:
@@ -288,31 +274,21 @@ class FlowerAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 # api for dishshop 
-dish_model_id = 3    
+
 class DishAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated,CanChangeDishPermission]
     authentication_classes = [JWTAuthentication]
            
     # Check if the user has access to the specified model_id in UserModelPermission
-    def has_model_access(self, user_id, model_id):
-        try:
-            permission = UserModelPermission.objects.get(user_id=user_id, model_id=model_id, status=True)
-            return True
-        except UserModelPermission.DoesNotExist:
-            return False
-       
+    
     def get(self, request):
-        user_id = request.user.id
-        if not self.has_model_access(user_id, dish_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
         dish = Dish.objects.all()
         serializer=DishSerializer(dish, many=True)
         return Response(serializer.data,status=status.HTTP_200_OK)
     
     def post(self, request):
-        user_id = request.user.id
-        if not self.has_model_access(user_id, dish_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
         serializer = DishSerializer(data = request.data)
         if serializer.is_valid():
             serializer.save()
@@ -321,9 +297,8 @@ class DishAPIView(APIView):
     
     def put(self, request):
         id = request.data.get('id')
-        user_id = request.user.id
-        if not self.has_model_access(user_id, dish_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
+        
         try:
             dish= Dish.objects.get(pk=id)
         except Dish.DoesNotExist:
@@ -335,30 +310,20 @@ class DishAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 # api for electronicshop
-electronic_model_id = 4
+
 class ElectronicsAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated,CanChangeElectronicsshopPermission]
     authentication_classes = [JWTAuthentication]
 
-    def has_model_access(self,user_id,model_id):
-        try:
-            permission=UserModelPermission.objects.get(user_id=user_id,model_id=model_id,status=True)
-            return True
-        except UserModelPermission.DoesNotExist:
-            return False
         
     def get(self, request):
-        user_id=request.user.id
-        if not self.has_model_access(user_id,electronic_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
         electro = Electronicsshop.objects.all()
         serializer=ElectronicsSerializer(electro,many=True)
         return Response(serializer.data,status=status.HTTP_200_OK)
     
     def post(self, request):
-        user_id=request.user.id
-        if not self.has_model_access(user_id,electronic_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
         serializer= ElectronicsSerializer(data = request.data)
         if serializer.is_valid():
             serializer.save()
@@ -367,9 +332,8 @@ class ElectronicsAPIView(APIView):
     
     def put(self, request):
         id = request.data.get('id')
-        user_id=request.user.id
-        if not self.has_model_access(user_id,electronic_model_id):
-            return Response({"msg": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+        
+        
         try:
             electro= Electronicsshop.objects.get(pk=id)
         except Electronicsshop.DoesNotExist:
@@ -390,71 +354,125 @@ class ElectronicsAPIView(APIView):
     #     return Response({'msg': 'Gadget deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
 #register model in model_list
-class ModelregisterAPIView(APIView):
 
-    def post(self,request):
-        serializer=ModellistSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    def get(self,request):
-        mdel=ModelList.objects.all()
-        serializer=ModellistSerializer(mdel,many=True)
-        return Response(serializer.data,status=status.HTTP_200_OK)
-    
 
-class SubuserModelAccessListAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication]
-    def get(self, request):
-        try:
-            # Attempt to fetch all UserModelPermission entries for the current authenticated user
-            permissions = UserModelPermission.objects.filter(user_id=request.user.id)
-            serializer = UsermodelpermissionSerializer(permissions, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except UserModelPermission.DoesNotExist:
-            return Response({"msg": "User not found in the permissions list."}, status=status.HTTP_404_NOT_FOUND)
-        
-
-class GrantPermissiontoSubuserAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+class AssignPermission(APIView):
+    permission_classes = [IsAuthenticated, IsAdminOrRegularUser]
     authentication_classes = [JWTAuthentication]
 
     def post(self, request):
-        try:
-            user = User.objects.get(id=request.user.id, role__in=["user", "admin"])
-        except User.DoesNotExist:
-            return Response({"msg": "You don't have permission to grant access to subusers."},
-                            status=status.HTTP_403_FORBIDDEN)
-
-        # Validate the input data from the request
-        serializer = UsermodelpermissionSerializer(data=request.data)
-        if serializer.is_valid():
-            # Save the permission data to the UserModelPermission model
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        user_id = request.user.id
+        # user_role = request.user.role  # Assuming 'role' is the attribute representing user roles
         
-    def put(self,request):
-        id = request.data.get('id')
-        try:
-            user = User.objects.get(id=request.user.id, role__in=["user", "admin"])
-        except User.DoesNotExist:
-            return Response({"msg": "You don't have permission to grant access to subusers."},
-                            status=status.HTTP_403_FORBIDDEN)
         
-        try:
-            usr = UserModelPermission.objects.get(pk=id)
-            serializer = UsermodelpermissionSerializer(usr,data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response({'msg':'permission updated successfully'},status=status.HTTP_205_RESET_CONTENT)
-            return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({"msg": "user not found"}, status=status.HTTP_404_NOT_FOUND)
+        # request_user=User.objects.get(id=requesting_user_id)
+        # print(request_user.role)
+        # if request_user.role != 1 and request_user.role != 2:
+        #     return Response({"You do not have permission to assign  permissions to subusers."},
+        #                     status=status.HTTP_403_FORBIDDEN)
         
 
+        username = request.data.get('username')
+        model_names = request.data.get('model_names')  # Change to 'model_names' to receive a list
 
-     
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response({"message": "User with the provided username does not exist."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        permissions_assigned = []
+        permissions_already_assigned = {}
+
+        for model_name in model_names:
+            
+
+            permission_codename = f'can_change_{model_name}'
+            try:
+                permission = Permission.objects.get(codename=permission_codename)
+            except Permission.DoesNotExist:
+                return Response({"message": f"Permission '{permission_codename}' does not exist."},
+                                status=status.HTTP_404_NOT_FOUND)
+
+            # Check if the permission is already assigned to the user for this model
+            existing_assignment = UserPermissionAssignment.objects.filter(user=user, permission=permission).first()
+            if existing_assignment:
+                permissions_already_assigned[model_name] = existing_assignment.assigned_datetime.isoformat()
+            else:
+                # Assign the permission to the user
+                UserPermissionAssignment.objects.create(user=user, permission=permission)
+                permissions_assigned.append(model_name)
+
+        # Record the assignment details
+        assignment_details = {
+            "username": user.username,
+            "permissions_assigned": permissions_assigned,
+            "permissions_already_assigned": permissions_already_assigned,
+            "permission_given_by": user_id 
+        }
+
+        return Response({"message": "Permissions assigned successfully.", "assignment_details": assignment_details},
+                        status=status.HTTP_200_OK)
+
+
+
+class RemovePermission(APIView):
+    permission_classes = [IsAuthenticated,  IsAdminOrRegularUser]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        requesting_user_id = request.user.id
+        # # user_role = request.user.role  # Assuming 'role' is the attribute representing user roles
+        # request_user=User.objects.get(id=requesting_user_id)
+        # # print(request_user.role)
+        # if request_user.role != 1 and request_user.role != 2:
+        #     return Response({"You do not have permission to remove permissions to subusers."},
+        #                     status=status.HTTP_403_FORBIDDEN)
+        
+        username = request.data.get('username')
+        model_names = request.data.get('model_names')  # Change to 'model_names' to receive a list
+
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response({"message": "User with the provided username does not exist."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        permissions_removed = []
+        permissions_not_assigned = {}
+
+        for model_name in model_names:
+            
+            permission_codename = f'can_change_{model_name}'
+            try:
+                permission = Permission.objects.get(codename=permission_codename)
+            except Permission.DoesNotExist:
+                return Response({"message": f"Permission '{permission_codename}' does not exist."},
+                                status=status.HTTP_404_NOT_FOUND)
+
+            # Check if the permission is assigned to the user for this model
+            existing_assignment = UserPermissionAssignment.objects.filter(user=user, permission=permission).first()
+            if existing_assignment:
+                # Record the timestamp before removing the permission
+                removed_datetime = existing_assignment.assigned_datetime
+                existing_assignment.delete()
+                permissions_removed.append((model_name, removed_datetime))
+            else:
+                permissions_not_assigned[model_name] = "Permission not assigned"
+
+        # Record the removal details
+        removal_details = {
+            "username": user.username,
+            "permissions_removed": permissions_removed,
+            "permissions_not_assigned": permissions_not_assigned,
+            "permission_removed_by": requesting_user_id
+        }
+
+        return Response({"message": "Permissions removed successfully.", "removal_details": removal_details},
+                        status=status.HTTP_200_OK)      
+
+# class SubUserProfileListAPIView(APIView):
+#     def get(self,request): 
+
+
+

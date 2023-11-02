@@ -15,7 +15,8 @@ urlpatterns = [
     path('flower/',FlowerAPIView.as_view()),
     path('dish/',DishAPIView.as_view()),
     path('electronics/',ElectronicsAPIView.as_view()),
-    path('model/register/',ModelregisterAPIView.as_view()),
-    path('model/access_check/',SubuserModelAccessListAPIView.as_view()),
-    path('grant_permission_to _subuser/',GrantPermissiontoSubuserAPIView.as_view()),
+    path('assign_permission/', AssignPermission.as_view(), name='assign-permission'),
+    path('remove_permission/', RemovePermission.as_view(), name='remove_permission'),
+    
+
 ]   

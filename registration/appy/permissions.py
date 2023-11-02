@@ -1,38 +1,27 @@
-from rest_framework import permissions
+from rest_framework.permissions import BasePermission
 
+class CanChangeBookshopPermission(BasePermission):
+    def has_permission(self, request, view):
+        # Check if the user has the 'can_change_bookshop' permission
+        return request.user.has_perm('appy.can_change_bookshop')
 
-class HasBookShopPermission(permissions.BasePermission):
+class CanChangeFlowershopPermission(BasePermission):
     def has_permission(self, request, view):
-        # if request.user.role == 'Superuser':
-        #     return True
-        return(request.user.id==1 and
-            #    request.user.is_authenticated and
-               request.user.username=="pool" and
-               request.method in ['POST', 'PUT', 'GET'] and
-               not request.method == 'DELETE')
+        # Check if the user has the 'can_change_flower' permission
+        return request.user.has_perm('appy.can_change_flowershop')
+class CanChangeDishPermission(BasePermission):
+    def has_permission(self, request, view):
+        # Check if the user has the 'can_change_dish' permission
+        return request.user.has_perm('appy.can_change_dish')
+    
+class CanChangeElectronicsshopPermission(BasePermission):
+    def has_permission(self, request, view):
+        # Check if the user has the 'can_change_electronicsshop' permission
+        return request.user.has_perm('appy.can_change_electronicsshop')
+    
 
-class HasFlowerShopPermission(permissions.BasePermission):
+class IsAdminOrRegularUser(BasePermission):
     def has_permission(self, request, view):
-        
-        return(request.user.id==2 and
-               request.user.is_authenticated and
-               request.user.username=="rool" and 
-               request.method in ['POST', 'PUT', 'GET'] and
-               not request.method == 'DELETE')
-class HasDishPermission(permissions.BasePermission):
-    def has_permission(self, request, view):
-        
-        return(request.user.id==3 and 
-               request.user.is_authenticated and
-               request.user.username=="rrr" and
-               request.method in ['POST', 'PUT', 'GET'] and
-               not request.method == 'DELETE')
+        return request.user.role in [1, 2]  # Allow admin and regular user
 
-class HasElectronicsShopPermission(permissions.BasePermission):
-    def has_permission(self, request, view):
-        
-        return( (request.user.id==4 or request.user.id==5) and
-               request.user.is_authenticated and
-               (request.user.username=="sss" or  request.user.username=='poky') and
-               request.method in ['POST', 'PUT', 'GET'] and
-               not request.method == 'DELETE' )
+    
